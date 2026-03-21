@@ -1,0 +1,211 @@
+/* App.css — global theme tokens + shared layout */
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+/* ════════════════════════════════════════════════════════════════════
+   THEME TOKENS
+   Every component reads these vars — no component ever hardcodes a
+   colour. Switching data-theme on <body> changes everything at once.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Light (default) ── */
+:root,
+[data-theme="light"] {
+  --t-bg:            #f0f4ff;
+  --t-surface:       #ffffff;
+  --t-surface-2:     #f3f4f6;
+  --t-surface-3:     #f9fafb;
+  --t-border:        #e5e7eb;
+  --t-border-soft:   #eaeaea;
+
+  --t-ink:           #1f2937;
+  --t-ink-2:         #374151;
+  --t-muted:         #6b7280;
+  --t-muted-2:       #9ca3af;
+
+  --t-accent:        #1a1aff;
+  --t-accent-hover:  #0000cc;
+  --t-accent-soft:   rgba(26,26,255,0.08);
+
+  --t-danger:        #ef4444;
+  --t-danger-soft:   #fee2e2;
+
+  --t-input-bg:      transparent;
+  --t-input-border:  #d1d5db;
+
+  --t-shadow-sm:     0 2px 8px rgba(0,0,0,0.07);
+  --t-shadow-md:     0 4px 14px rgba(0,0,0,0.10);
+
+  --t-nav-bg:        #ffffff;
+  --t-nav-txt:       #9ca3af;
+  --t-nav-active:    #1a1aff;
+  --t-fab:           #1a1aff;
+  --t-fab-hover:     #0000cc;
+}
+
+/* ── Dark ── */
+[data-theme="dark"] {
+  --t-bg:            #0f0f1a;
+  --t-surface:       #1a1a2e;
+  --t-surface-2:     #16162a;
+  --t-surface-3:     #131320;
+  --t-border:        rgba(255,255,255,0.09);
+  --t-border-soft:   rgba(255,255,255,0.06);
+
+  --t-ink:           #e8e8f5;
+  --t-ink-2:         #c4c4dd;
+  --t-muted:         #6b6b8a;
+  --t-muted-2:       #4a4a6a;
+
+  --t-accent:        #7c6fff;
+  --t-accent-hover:  #6357e8;
+  --t-accent-soft:   rgba(124,111,255,0.14);
+
+  --t-danger:        #ff6b6b;
+  --t-danger-soft:   rgba(255,107,107,0.15);
+
+  --t-input-bg:      rgba(255,255,255,0.05);
+  --t-input-border:  rgba(255,255,255,0.12);
+
+  --t-shadow-sm:     0 2px 8px rgba(0,0,0,0.4);
+  --t-shadow-md:     0 4px 16px rgba(0,0,0,0.5);
+
+  --t-nav-bg:        #1a1a2e;
+  --t-nav-txt:       #5a5a7a;
+  --t-nav-active:    #7c6fff;
+  --t-fab:           #7c6fff;
+  --t-fab-hover:     #6357e8;
+}
+
+/* ── Warm ── */
+[data-theme="warm"] {
+  --t-bg:            #faf7f2;
+  --t-surface:       #ffffff;
+  --t-surface-2:     #f5f0e8;
+  --t-surface-3:     #fdf9f5;
+  --t-border:        #e8e0d4;
+  --t-border-soft:   #ede8e0;
+
+  --t-ink:           #1c1917;
+  --t-ink-2:         #292524;
+  --t-muted:         #78716c;
+  --t-muted-2:       #a8a29e;
+
+  --t-accent:        #e85d3f;
+  --t-accent-hover:  #c94b30;
+  --t-accent-soft:   rgba(232,93,63,0.09);
+
+  --t-danger:        #dc2626;
+  --t-danger-soft:   #fee2e2;
+
+  --t-input-bg:      transparent;
+  --t-input-border:  #d6cdc0;
+
+  --t-shadow-sm:     0 2px 8px rgba(0,0,0,0.06);
+  --t-shadow-md:     0 4px 14px rgba(0,0,0,0.09);
+
+  --t-nav-bg:        #ffffff;
+  --t-nav-txt:       #a8a29e;
+  --t-nav-active:    #e85d3f;
+  --t-fab:           #e85d3f;
+  --t-fab-hover:     #c94b30;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   BASE RESET
+   ════════════════════════════════════════════════════════════════════ */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; width: 100%; }
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background: var(--t-bg);
+  color: var(--t-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.35s ease, color 0.35s ease;
+}
+
+.app {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SHARED FAB
+   ════════════════════════════════════════════════════════════════════ */
+.app__fab {
+  position: fixed;
+  bottom: 70px; right: 24px;
+  background: var(--t-fab);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 56px; height: 56px;
+  font-size: 26px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 20;
+  transition: background 0.2s, transform 0.15s;
+}
+.app__fab:hover { background: var(--t-fab-hover); transform: scale(1.08); }
+
+/* ════════════════════════════════════════════════════════════════════
+   SHARED FOOTER NAV
+   ════════════════════════════════════════════════════════════════════ */
+.app__footer-nav {
+  position: fixed;
+  bottom: 0; left: 0;
+  width: 100%;
+  background: var(--t-nav-bg);
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 0;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+  z-index: 50;
+  transition: background 0.35s ease;
+}
+
+.app__nav-btn {
+  background: transparent; border: none;
+  display: flex; flex-direction: column;
+  align-items: center;
+  color: var(--t-nav-txt);
+  font-size: 12px; gap: 3px;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 400; padding: 0 12px;
+  transition: color 0.2s;
+}
+.app__nav-btn--active { color: var(--t-nav-active); font-weight: 700; }
+.app__nav-icon { font-size: 20px; }
+
+/* ── Sync indicator ──────────────────────────────────────────────────── */
+.app__sync-badge {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--t-surface);
+  color: var(--t-muted);
+  border: 1px solid var(--t-border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 200;
+  box-shadow: var(--t-shadow-sm);
+  animation: syncPulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}

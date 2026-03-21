@@ -1,0 +1,126 @@
+/* Login.css */
+
+.login {
+  position: fixed; inset: 0;
+  background: rgb(2, 2, 43);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: 20px 20px 40px; z-index: 100; overflow-y: auto;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+  opacity: 1; visibility: visible;
+}
+.login--hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+/* ── Logo ── */
+.login__logo {
+  margin-bottom: 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.login__logo-mark {
+  width: 60px; height: 60px; border-radius: 18px;
+  background: var(--t-accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  transition: background 0.35s;
+}
+.login__logo-name { font-size: 20px; font-weight: 800; color: #f5f5f5; letter-spacing: -0.5px; }
+
+/* ── Heading ── */
+.login__title    { color: #f5f5f5; font-size: 26px; font-weight: 700; margin: 0 0 6px; text-align: center; }
+.login__subtitle { color: rgba(255,255,255,0.4); font-size: 14px; margin: 0 0 24px; text-align: center; }
+
+/* ── Form ── */
+.login__form { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+.login__field { display: flex; flex-direction: column; gap: 5px; }
+.login__label { color: rgba(255,255,255,0.55); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.login__input {
+  background: rgba(255,255,255,0.07); color: #f5f5f5;
+  padding: 12px 14px; border: 1.5px solid rgba(255,255,255,0.13);
+  border-radius: 12px; font-size: 15px; outline: none; width: 100%;
+  font-family: inherit; transition: border-color 0.2s, background 0.2s;
+}
+.login__input:focus { border-color: var(--t-accent); background: rgba(255,255,255,0.1); }
+.login__input::placeholder { color: rgba(255,255,255,0.22); }
+.login__input--error { border-color: #ff6b6b !important; }
+
+/* ── Forgot password ── */
+.login__forgot {
+  background: none; border: none; color: rgba(255,255,255,0.4);
+  font-size: 12px; cursor: pointer; text-align: right;
+  font-family: inherit; padding: 0; margin-top: -4px; transition: color 0.2s;
+  align-self: flex-end;
+}
+.login__forgot:hover { color: #fff; }
+
+/* ── Error / success banners ── */
+.login__error {
+  background: rgba(255,107,107,0.14); border: 1px solid rgba(255,107,107,0.35);
+  border-radius: 10px; padding: 10px 14px;
+  color: #fca5a5; font-size: 13px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.login__error-icon { font-size: 16px; flex-shrink: 0; }
+
+.login__success {
+  background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3);
+  border-radius: 10px; padding: 10px 14px;
+  color: #86efac; font-size: 13px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* ── Primary button ── */
+.login__btn {
+  padding: 13px; background: var(--t-accent); color: #fff;
+  border: none; border-radius: 12px;
+  font-weight: 700; font-size: 15px; cursor: pointer;
+  font-family: inherit; transition: opacity 0.2s, transform 0.1s, background 0.35s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 4px;
+}
+.login__btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+.login__btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ── Spinner ── */
+.login__spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  animation: loginSpin 0.7s linear infinite; flex-shrink: 0;
+}
+@keyframes loginSpin { to { transform: rotate(360deg); } }
+
+/* ── Divider ── */
+.login__divider { display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,0.28); font-size: 12px; }
+.login__divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
+
+/* ── Social buttons ── */
+.login__social {
+  padding: 11px; border: none; border-radius: 12px; font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; font-family: inherit; font-weight: 600;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.login__social:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+.login__social:disabled { opacity: 0.5; cursor: not-allowed; }
+.login__social--google { background: #fff; color: #333; }
+.login__social--apple  { background: #111; color: #fff; }
+.login__social img { width: 18px; }
+
+/* ── Guest ── */
+.login__guest {
+  padding: 11px; background: transparent; color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.13); border-radius: 12px;
+  font-size: 13px; cursor: pointer; font-family: inherit;
+  transition: border-color 0.2s, color 0.2s;
+}
+.login__guest:hover { border-color: rgba(255,255,255,0.35); color: #fff; }
+
+/* ── Toggle ── */
+.login__toggle { text-align: center; font-size: 13px; color: rgba(255,255,255,0.38); margin-top: 4px; }
+.login__toggle-btn {
+  background: none; border: none; color: var(--t-accent);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit; padding: 0; margin-left: 4px; transition: opacity 0.2s;
+}
+.login__toggle-btn:hover { opacity: 0.8; }

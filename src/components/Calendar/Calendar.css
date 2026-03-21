@@ -229,7 +229,7 @@
   align-items: center;
   gap: 6px;
   background: var(--cal-accent);
-  color: #7b74ff;
+  color: #fff;
   border: none;
   border-radius: 8px;
   padding: 7px 14px;
@@ -531,6 +531,7 @@
   font-weight: 700;
   cursor: pointer;
   font-family: var(--cal-font);
+  background: #7b74ff;
   transition: background 0.2s, transform 0.1s;
 }
 

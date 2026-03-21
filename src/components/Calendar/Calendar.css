@@ -229,7 +229,7 @@
   align-items: center;
   gap: 6px;
   background: var(--cal-accent);
-  color: #fff;
+  color: #7b74ff;
   border: none;
   border-radius: 8px;
   padding: 7px 14px;
@@ -238,6 +238,7 @@
   cursor: pointer;
   font-family: var(--cal-font);
   transition: background 0.2s, transform 0.1s;
+
 }
 
 .calendar__panel__add-btn:hover {

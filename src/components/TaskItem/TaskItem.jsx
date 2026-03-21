@@ -1,11 +1,10 @@
-import { PRIORITY_COLOR, CAT_COLOR, formatDate } from "../../utils/helpers";
+import { PRIORITY_COLOR, CAT_COLOR, formatDueDateTime, isOverdue } from "../../utils/helpers";
 import "./TaskItem.css";
 
-// Splits text into parts and wraps matched segments in <mark>
 function Highlight({ text, query }) {
   if (!query) return <>{text}</>;
   const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
-  const parts  = text.split(regex);
+  const parts = text.split(regex);
   return (
     <>
       {parts.map((part, i) =>
@@ -18,17 +17,16 @@ function Highlight({ text, query }) {
 }
 
 export default function TaskItem({ task, onToggle, onDelete, highlight = "" }) {
+  const overdue   = !task.completed && isOverdue(task.dueDate, task.dueTime);
+  const dueLabel  = formatDueDateTime(task.dueDate, task.dueTime);
+
   return (
-    <li className="task-item">
+    <li className={`task-item${overdue ? " task-item--overdue" : ""}`}>
       {/* Left */}
       <div className="task-item__left">
         <label className="task-item__label">
-          <input
-            type="checkbox"
-            className="task-item__checkbox"
-            checked={task.completed}
-            onChange={() => onToggle(task.id)}
-          />
+          <input type="checkbox" className="task-item__checkbox"
+            checked={task.completed} onChange={() => onToggle(task.id)} />
           <span className={`task-item__title${task.completed ? " task-item__title--done" : ""}`}>
             <Highlight text={task.title} query={highlight} />
           </span>
@@ -46,7 +44,9 @@ export default function TaskItem({ task, onToggle, onDelete, highlight = "" }) {
 
       {/* Right */}
       <div className="task-item__right">
-        <span className="task-item__due">Due: {formatDate(task.dueDate)}</span>
+        <span className={`task-item__due${overdue ? " task-item__due--overdue" : ""}`}>
+          {overdue ? "⚠️ " : "🕐 "}{dueLabel}
+        </span>
         <button className="task-item__delete" onClick={() => onDelete(task.id)}>
           Delete
         </button>

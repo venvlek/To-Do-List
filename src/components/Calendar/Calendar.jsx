@@ -53,7 +53,8 @@ function QuickAddModal({ visible, dateStr, onClose, onAdd }) {
 
   const handleSubmit = () => {
     if (!title.trim()) { alert("Please enter a task title"); return; }
-    onAdd({ title: title.trim(), description: desc.trim(), dueDate: dateStr, priority, category });
+    // Default time: 23:59 for calendar-picked dates (end of day)
+    onAdd({ title: title.trim(), description: desc.trim(), dueDate: dateStr, dueTime: "23:59", priority, category });
     setTitle(""); setDesc(""); setPriority("High"); setCategory("Personal");
     onClose();
   };

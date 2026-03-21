@@ -30,3 +30,13 @@
   padding: 0 2px;
   font-style: normal;
 }
+
+/* ── Overdue state ── */
+.task-item--overdue {
+  border-left: 3px solid var(--t-danger);
+}
+
+.task-item__due--overdue {
+  color: var(--t-danger);
+  font-weight: 600;
+}

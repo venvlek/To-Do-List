@@ -7,10 +7,10 @@ import AddTaskModal     from "./components/AddTaskModal/AddTaskModal";
 import Calendar         from "./components/Calendar/Calendar";
 import Stats            from "./components/Stats/Stats";
 import Settings         from "./components/Settings/Settings";
-import useAuth          from "./hooks/useAuth";
-import useNotifications from "./hooks/useNotifications";
 import InstallBanner    from "./components/InstallBanner/InstallBanner";
+import useAuth          from "./hooks/useAuth";
 import useFirestore     from "./hooks/useFirestore";
+import useNotifications from "./hooks/useNotifications";
 
 import { todayStr, DEFAULT_TASKS } from "./utils/helpers";
 import "./App.css";
@@ -38,25 +38,6 @@ function applyTheme(theme) {
   document.body.setAttribute("data-theme", theme || "light");
 }
 
-function readTasks(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : DEFAULT_TASKS;
-  } catch { return DEFAULT_TASKS; }
-}
-
-function readSettings(key, user) {
-  const base = {
-    ...DEFAULT_SETTINGS,
-    profileName:  user?.displayName || "",
-    profileEmail: user?.email       || "",
-  };
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? { ...base, ...JSON.parse(raw) } : base;
-  } catch { return base; }
-}
-
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const {
@@ -69,7 +50,6 @@ export default function App() {
 
   // ── Splash ────────────────────────────────────────────────────────────────
   const [splashDone, setSplashDone] = useState(false);
-
   useEffect(() => {
     const t = setTimeout(() => setSplashDone(true), 2500);
     return () => clearTimeout(t);
@@ -79,52 +59,47 @@ export default function App() {
   const showLogin     = splashDone && !authLoading && !user;
   const showDashboard = splashDone && !authLoading && !!user;
 
-  // ── Storage keys ──────────────────────────────────────────────────────────
-  const storageKey  = user ? `todoTasks_${user.uid}`    : "todoTasks_guest";
-  const settingsKey = user ? `todoSettings_${user.uid}` : "todoSettings_guest";
+  // ── Tasks & Settings state — owned here, synced by useFirestore ───────────
+  const uid         = user?.uid;
+  const cacheKey    = uid ? `todoTasks_${uid}`    : null;
+  const settingsKey = uid ? `todoSettings_${uid}` : null;
 
-  // ── Tasks state ───────────────────────────────────────────────────────────
-  const [tasks, setTasks] = useState(() => readTasks(storageKey));
-  const [prevStorageKey, setPrevStorageKey] = useState(storageKey);
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const raw = cacheKey ? localStorage.getItem(cacheKey) : null;
+      return raw ? JSON.parse(raw) : DEFAULT_TASKS;
+    } catch { return DEFAULT_TASKS; }
+  });
 
-  // Render-phase reset when user switches (avoids setState-in-effect)
-  if (storageKey !== prevStorageKey) {
-    setPrevStorageKey(storageKey);
-    setTasks(readTasks(storageKey));
-  }
+  const defaultSettings = {
+    ...DEFAULT_SETTINGS,
+    profileName:  user?.displayName || "",
+    profileEmail: user?.email       || "",
+  };
 
-  // Persist to localStorage as offline cache
+  const [settings, setSettings] = useState(() => {
+    try {
+      const raw = settingsKey ? localStorage.getItem(settingsKey) : null;
+      return raw ? { ...defaultSettings, ...JSON.parse(raw) } : defaultSettings;
+    } catch { return defaultSettings; }
+  });
+
+  // ── Apply theme whenever it changes ───────────────────────────────────────
+  useEffect(() => { applyTheme(settings.theme); }, [settings.theme]);
+  useEffect(() => { applyTheme(settings.theme); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Persist settings to localStorage ─────────────────────────────────────
+  // (tasks localStorage is managed inside useFirestore to avoid conflicts)
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(tasks)); } catch { /* ignore */ }
-  }, [tasks, storageKey]);
-
-  // ── Settings state ────────────────────────────────────────────────────────
-  const [settings, setSettings] = useState(() => readSettings(settingsKey, user));
-  const [prevSettingsKey, setPrevSettingsKey] = useState(settingsKey);
-
-  if (settingsKey !== prevSettingsKey) {
-    setPrevSettingsKey(settingsKey);
-    setSettings(readSettings(settingsKey, user));
-  }
-
-  useEffect(() => {
+    if (!settingsKey) return;
     try { localStorage.setItem(settingsKey, JSON.stringify(settings)); } catch { /* ignore */ }
-    applyTheme(settings.theme);
   }, [settings, settingsKey]);
-
-  useEffect(() => {
-    applyTheme(readSettings(settingsKey, user).theme);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Firestore sync ────────────────────────────────────────────────────────
   const {
-    syncStatus,
-    lastSynced,
-    saveTask,
-    removeTask,
-    clearAllTasks: firestoreClearAll,
-    saveSettings,
-    isAnonymous,
+    syncStatus, lastSynced,
+    saveTask, removeTask, clearAllTasks: firestoreClearAll,
+    saveSettings, isAnonymous,
   } = useFirestore({ user, localTasks: tasks, setTasks, setSettings });
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -154,16 +129,14 @@ export default function App() {
   });
   const timeLabel = now.toLocaleTimeString("en-US");
 
-  // ── Task handlers — update local state + Firestore ─────────────────────
+  // ── Task handlers ─────────────────────────────────────────────────────────
   const handleToggleTask = (id) => {
     playSound("complete");
     setTasks((prev) => {
-      const updated = prev.map((t) =>
-        t.id === id ? { ...t, completed: !t.completed } : t
-      );
-      const changedTask = updated.find((t) => t.id === id);
-      if (changedTask) saveTask(changedTask);
-      return updated;
+      const next    = prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
+      const changed = next.find((t) => t.id === id);
+      if (changed) saveTask(changed);
+      return next;
     });
   };
 
@@ -177,17 +150,20 @@ export default function App() {
 
   const handleAddTask = (data) => {
     playSound("add");
-    const dueDate  = data.dueDate || today;
-    const newTask  = {
-      id:          String(Date.now()),   // string id works as Firestore doc id
+    const dueDate = data.dueDate || today;
+    const newTask = {
+      id:          String(Date.now()),
       description: "",
+      dueTime:     "",
       ...data,
       dueDate,
       priority:    data.priority.toLowerCase(),
       completed:   false,
       createdAt:   Date.now(),
     };
+    // 1. Update local state immediately so user sees it right away
     setTasks((prev) => [newTask, ...prev]);
+    // 2. Persist to Firestore (saveTask handles pending protection)
     saveTask(newTask);
 
     if (dueDate === today)    setFilter("today");
@@ -200,7 +176,6 @@ export default function App() {
     firestoreClearAll();
   };
 
-  // ── Settings handler — update local + Firestore ───────────────────────
   const handleSettingsChange = (newSettings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
@@ -211,11 +186,9 @@ export default function App() {
     if (email === "__reset__") { await resetPassword(password); return; }
     await signIn(email, password);
   };
-
   const handleSignUp = async (email, password, name) => {
     await signUp(email, password, name);
   };
-
   const handleLogOut = async () => {
     await logOut();
     setActiveNav("home");
@@ -274,16 +247,11 @@ export default function App() {
         onClearTasks={handleClearTasks}
         onLogOut={handleLogOut}
         onRequestPermission={requestPermission}
-        syncStatus={syncStatus}
-        lastSynced={lastSynced}
-        isAnonymous={isAnonymous}
         user={user}
       />
 
       {showDashboard && activeNav === "home" && (
-        <button className="app__fab" onClick={() => setShowAddTask(true)} title="Add task">
-          ＋
-        </button>
+        <button className="app__fab" onClick={() => setShowAddTask(true)} title="Add task">＋</button>
       )}
 
       {showDashboard && (
@@ -306,7 +274,6 @@ export default function App() {
         user={user}
       />
 
-      {/* PWA install banner */}
       <InstallBanner visible={showDashboard} />
     </div>
   );

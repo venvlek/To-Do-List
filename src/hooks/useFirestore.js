@@ -1,4 +1,3 @@
-// hooks/useFirestore.js
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   collection, doc,
@@ -6,135 +5,141 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-export default function useFirestore({ user, localTasks, setTasks, setSettings }) {
-  const [syncStatus, setSyncStatus] = useState("synced");
-  const [lastSynced, setLastSynced] = useState(null);
+export default function useFirestore({ user }) {
+  const uid         = user?.uid;
   const isAnonymous = user?.isAnonymous ?? true;
+  const cacheKey    = uid && !isAnonymous ? `firestoreTasks_${uid}` : null;
 
-  // Track IDs of tasks we just wrote locally so onSnapshot
-  // doesn't overwrite them before Firestore confirms the write
+  // ── Tasks — start from cache, then Firestore takes over ──────────────────
+  const [tasks, setTasks] = useState(() => {
+    if (!cacheKey) return [];
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const [tasksReady, setTasksReady] = useState(isAnonymous); // guests are immediately "ready"
+  const [syncStatus, setSyncStatus] = useState("syncing");
+  const [lastSynced, setLastSynced] = useState(null);
+
+  // Track locally-added task IDs so onSnapshot doesn't drop them
   const pendingIds = useRef(new Set());
 
-  // ── Real-time tasks listener ──────────────────────────────────────────────
+  // ── Firestore real-time listener ─────────────────────────────────────────
   useEffect(() => {
-    if (!user || isAnonymous) return;
+    if (!uid || isAnonymous) {
+      setTasksReady(true);
+      setSyncStatus("synced");
+      return;
+    }
 
     setSyncStatus("syncing");
-    const tasksRef = collection(db, "users", user.uid, "tasks");
+    const tasksRef = collection(db, "users", uid, "tasks");
 
     const unsub = onSnapshot(
       tasksRef,
       (snapshot) => {
-        const firestoreTasks = snapshot.docs
+        const fromFirestore = snapshot.docs
           .map((d) => ({ ...d.data(), id: d.id }))
-          // Sort by createdAt first, fall back to id (which is Date.now())
-          .sort((a, b) => {
-            const ca = a.createdAt || Number(a.id) || 0;
-            const cb = b.createdAt || Number(b.id) || 0;
-            return cb - ca; // newest first
-          });
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-        // Merge: keep locally-pending tasks that haven't reached Firestore yet
         setTasks((prev) => {
-          if (pendingIds.current.size === 0) {
-            // Nothing pending — use Firestore data directly
-            return firestoreTasks;
-          }
+          // Keep any locally-pending tasks that haven't reached Firestore yet
+          const pending = prev.filter((t) => pendingIds.current.has(String(t.id)));
+          const fromDB  = fromFirestore.filter((t) => !pendingIds.current.has(String(t.id)));
+          const merged  = [...pending, ...fromDB];
 
-          // Keep pending tasks at the top, append the rest from Firestore
-          const pending  = prev.filter((t) => pendingIds.current.has(String(t.id)));
-          const fromDB   = firestoreTasks.filter((t) => !pendingIds.current.has(String(t.id)));
-          return [...pending, ...fromDB];
+          // Save merged result to cache
+          if (cacheKey) {
+            try { localStorage.setItem(cacheKey, JSON.stringify(merged)); } catch { /* ignore */ }
+          }
+          return merged;
         });
 
+        setTasksReady(true);
         setSyncStatus("synced");
         setLastSynced(new Date());
-
-        try {
-          localStorage.setItem(`todoTasks_${user.uid}`, JSON.stringify(firestoreTasks));
-        } catch { /* ignore */ }
       },
       (err) => {
         console.error("Firestore tasks error:", err);
         setSyncStatus("error");
+        setTasksReady(true); // show whatever we have from cache
       }
     );
 
     return unsub;
-  }, [user?.uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, isAnonymous, cacheKey]);
 
-  // ── Real-time settings listener ───────────────────────────────────────────
+  // ── Settings ──────────────────────────────────────────────────────────────
+  const settingsCacheKey = uid && !isAnonymous ? `firestoreSettings_${uid}` : null;
+
+  const [settings, setSettings] = useState(() => {
+    if (!settingsCacheKey) return null;
+    try {
+      const raw = localStorage.getItem(settingsCacheKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+
   useEffect(() => {
-    if (!user || isAnonymous) return;
-
-    const settingsRef = doc(db, "users", user.uid, "settings", "prefs");
-
-    const unsub = onSnapshot(
-      settingsRef,
-      (snap) => {
-        if (snap.exists()) {
-          setSettings((prev) => ({ ...prev, ...snap.data() }));
+    if (!uid || isAnonymous) return;
+    const ref = doc(db, "users", uid, "settings", "prefs");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setSettings((prev) => ({ ...prev, ...data }));
+        if (settingsCacheKey) {
+          try { localStorage.setItem(settingsCacheKey, JSON.stringify(data)); } catch { /* ignore */ }
         }
-      },
-      (err) => { console.error("Firestore settings error:", err); }
-    );
-
+      }
+    }, (err) => { console.error("Firestore settings error:", err); });
     return unsub;
-  }, [user?.uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, isAnonymous, settingsCacheKey]);
 
-  // ── Write a single task ───────────────────────────────────────────────────
+  // ── Write helpers ─────────────────────────────────────────────────────────
   const saveTask = useCallback(async (task) => {
-    if (!user || isAnonymous) return;
-
+    if (!uid || isAnonymous) return;
     const taskId = String(task.id);
     pendingIds.current.add(taskId);
     setSyncStatus("syncing");
-
     try {
-      await setDoc(
-        doc(db, "users", user.uid, "tasks", taskId),
-        {
-          ...task,
-          id:        taskId,
-          createdAt: task.createdAt || Date.now(),
-          updatedAt: Date.now(),
-        }
-      );
+      await setDoc(doc(db, "users", uid, "tasks", taskId), {
+        ...task,
+        id:        taskId,
+        createdAt: task.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      });
       setSyncStatus("synced");
       setLastSynced(new Date());
     } catch (err) {
       console.error("saveTask error:", err);
       setSyncStatus("error");
     } finally {
-      // Remove from pending after a short delay to let onSnapshot settle
-      setTimeout(() => pendingIds.current.delete(taskId), 3000);
+      setTimeout(() => pendingIds.current.delete(taskId), 5000);
     }
-  }, [user?.uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, isAnonymous]);
 
-  // ── Delete a single task ──────────────────────────────────────────────────
   const removeTask = useCallback(async (taskId) => {
-    if (!user || isAnonymous) return;
+    if (!uid || isAnonymous) return;
     setSyncStatus("syncing");
     try {
-      await deleteDoc(doc(db, "users", user.uid, "tasks", String(taskId)));
+      await deleteDoc(doc(db, "users", uid, "tasks", String(taskId)));
       setSyncStatus("synced");
       setLastSynced(new Date());
     } catch (err) {
       console.error("removeTask error:", err);
       setSyncStatus("error");
     }
-  }, [user?.uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, isAnonymous]);
 
-  // ── Batch delete all tasks ────────────────────────────────────────────────
-  const clearAllTasks = useCallback(async () => {
-    if (!user || isAnonymous) return;
+  const clearAllTasks = useCallback(async (currentTasks) => {
+    if (!uid || isAnonymous) return;
     setSyncStatus("syncing");
     try {
       const batch    = writeBatch(db);
-      const tasksRef = collection(db, "users", user.uid, "tasks");
-      localTasks.forEach((task) => {
-        batch.delete(doc(tasksRef, String(task.id)));
-      });
+      const tasksRef = collection(db, "users", uid, "tasks");
+      currentTasks.forEach((t) => batch.delete(doc(tasksRef, String(t.id))));
       await batch.commit();
       setSyncStatus("synced");
       setLastSynced(new Date());
@@ -142,21 +147,28 @@ export default function useFirestore({ user, localTasks, setTasks, setSettings }
       console.error("clearAllTasks error:", err);
       setSyncStatus("error");
     }
-  }, [user?.uid, isAnonymous, localTasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, isAnonymous]);
 
-  // ── Save settings ─────────────────────────────────────────────────────────
   const saveSettings = useCallback(async (newSettings) => {
-    if (!user || isAnonymous) return;
+    if (!uid || isAnonymous) return;
     try {
       await setDoc(
-        doc(db, "users", user.uid, "settings", "prefs"),
+        doc(db, "users", uid, "settings", "prefs"),
         { ...newSettings, updatedAt: Date.now() },
         { merge: true }
       );
-    } catch (err) {
-      console.error("saveSettings error:", err);
-    }
-  }, [user?.uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
+      if (settingsCacheKey) {
+        try { localStorage.setItem(settingsCacheKey, JSON.stringify(newSettings)); } catch { /* ignore */ }
+      }
+    } catch (err) { console.error("saveSettings error:", err); }
+  }, [uid, isAnonymous, settingsCacheKey]);
 
-  return { syncStatus, lastSynced, saveTask, removeTask, clearAllTasks, saveSettings, isAnonymous };
+  return {
+    tasks, setTasks,
+    settings, setSettings,
+    tasksReady,
+    syncStatus, lastSynced,
+    isAnonymous,
+    saveTask, removeTask, clearAllTasks, saveSettings,
+  };
 }

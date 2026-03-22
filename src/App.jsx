@@ -12,7 +12,7 @@ import useAuth          from "./hooks/useAuth";
 import useFirestore     from "./hooks/useFirestore";
 import useNotifications from "./hooks/useNotifications";
 
-import { todayStr, DEFAULT_TASKS } from "./utils/helpers";
+import { todayStr } from "./utils/helpers";
 import "./App.css";
 
 const NAV_ITEMS = [
@@ -55,52 +55,39 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  const showSplash    = !splashDone || authLoading;
-  const showLogin     = splashDone && !authLoading && !user;
-  const showDashboard = splashDone && !authLoading && !!user;
+  // ── Firestore — single source of truth for tasks + settings ──────────────
+  const {
+    tasks,    setTasks,
+    settings: firestoreSettings,
+    setSettings: setFirestoreSettings,
+    tasksReady,
+    syncStatus, lastSynced,
+    isAnonymous,
+    saveTask, removeTask, clearAllTasks, saveSettings,
+  } = useFirestore({ user });
 
-  // ── Tasks & Settings state — owned here, synced by useFirestore ───────────
-  const uid         = user?.uid;
-  const cacheKey    = uid ? `todoTasks_${uid}`    : null;
-  const settingsKey = uid ? `todoSettings_${uid}` : null;
-
-  const [tasks, setTasks] = useState(() => {
-    try {
-      const raw = cacheKey ? localStorage.getItem(cacheKey) : null;
-      return raw ? JSON.parse(raw) : DEFAULT_TASKS;
-    } catch { return DEFAULT_TASKS; }
-  });
-
-  const defaultSettings = {
+  // Merge Firestore settings with defaults + user profile info
+  const settings = {
     ...DEFAULT_SETTINGS,
     profileName:  user?.displayName || "",
     profileEmail: user?.email       || "",
+    ...(firestoreSettings || {}),
   };
 
-  const [settings, setSettings] = useState(() => {
-    try {
-      const raw = settingsKey ? localStorage.getItem(settingsKey) : null;
-      return raw ? { ...defaultSettings, ...JSON.parse(raw) } : defaultSettings;
-    } catch { return defaultSettings; }
-  });
+  const setSettings = (newSettings) => {
+    setFirestoreSettings(newSettings);
+    saveSettings(newSettings);
+  };
 
-  // ── Apply theme whenever it changes ───────────────────────────────────────
+  // ── Apply theme ───────────────────────────────────────────────────────────
   useEffect(() => { applyTheme(settings.theme); }, [settings.theme]);
   useEffect(() => { applyTheme(settings.theme); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Persist settings to localStorage ─────────────────────────────────────
-  // (tasks localStorage is managed inside useFirestore to avoid conflicts)
-  useEffect(() => {
-    if (!settingsKey) return;
-    try { localStorage.setItem(settingsKey, JSON.stringify(settings)); } catch { /* ignore */ }
-  }, [settings, settingsKey]);
-
-  // ── Firestore sync ────────────────────────────────────────────────────────
-  const {
-    syncStatus, lastSynced,
-    saveTask, removeTask, clearAllTasks: firestoreClearAll,
-    saveSettings, isAnonymous,
-  } = useFirestore({ user, localTasks: tasks, setTasks, setSettings });
+  // ── Screen logic ──────────────────────────────────────────────────────────
+  const showSplash    = !splashDone || authLoading;
+  const showLogin     = splashDone && !authLoading && !user;
+  // Also wait for Firestore to load before showing dashboard
+  const showDashboard = splashDone && !authLoading && !!user && tasksReady;
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { requestPermission, playSound } = useNotifications({ tasks, settings });
@@ -161,9 +148,7 @@ export default function App() {
       completed:   false,
       createdAt:   Date.now(),
     };
-    // 1. Update local state immediately so user sees it right away
     setTasks((prev) => [newTask, ...prev]);
-    // 2. Persist to Firestore (saveTask handles pending protection)
     saveTask(newTask);
 
     if (dueDate === today)    setFilter("today");
@@ -172,13 +157,9 @@ export default function App() {
   };
 
   const handleClearTasks = () => {
+    const current = tasks;
     setTasks([]);
-    firestoreClearAll();
-  };
-
-  const handleSettingsChange = (newSettings) => {
-    setSettings(newSettings);
-    saveSettings(newSettings);
+    clearAllTasks(current);
   };
 
   // ── Auth handlers ─────────────────────────────────────────────────────────
@@ -210,6 +191,14 @@ export default function App() {
         authError={authError}
         clearError={clearError}
       />
+
+      {/* Loading state while Firestore loads */}
+      {splashDone && !authLoading && !!user && !tasksReady && (
+        <div className="app__loading">
+          <div className="app__loading__spinner" />
+          <p>Loading your tasks…</p>
+        </div>
+      )}
 
       <Dashboard
         visible={showDashboard && activeNav === "home"}
@@ -243,7 +232,7 @@ export default function App() {
       <Settings
         visible={showDashboard && activeNav === "settings"}
         settings={settings}
-        onSettingsChange={handleSettingsChange}
+        onSettingsChange={setSettings}
         onClearTasks={handleClearTasks}
         onLogOut={handleLogOut}
         onRequestPermission={requestPermission}

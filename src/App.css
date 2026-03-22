@@ -209,3 +209,24 @@ body {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
 }
+
+/* ── Loading screen ──────────────────────────────────────────────────── */
+.app__loading {
+  position: fixed; inset: 0;
+  background: var(--t-bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; z-index: 5;
+}
+.app__loading p {
+  color: var(--t-muted);
+  font-size: 14px; font-weight: 500;
+}
+.app__loading__spinner {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--t-border);
+  border-top-color: var(--t-accent);
+  animation: appSpin 0.8s linear infinite;
+}
+@keyframes appSpin { to { transform: rotate(360deg); } }

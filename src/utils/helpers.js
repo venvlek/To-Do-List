@@ -48,13 +48,7 @@ export const isOverdue = (dateStr, timeStr) => {
   return dueDate < now;
 };
 
-export const DEFAULT_TASKS = [
-  { id: 1, title: "Buy groceries",              description: "", category: "School",   priority: "high",   dueDate: todayStr(), dueTime: "18:00", completed: false },
-  { id: 2, title: "Finish project report",       description: "", category: "Work",     priority: "medium", dueDate: todayStr(), dueTime: "17:00", completed: false },
-  { id: 3, title: "Call mom",                    description: "", category: "Personal", priority: "low",    dueDate: todayStr(), dueTime: "20:00", completed: true  },
-  { id: 4, title: "Schedule dentist appointment",description: "", category: "Health",   priority: "high",   dueDate: todayStr(), dueTime: "09:00", completed: false },
-  { id: 5, title: "Plan weekend trip",           description: "", category: "Personal", priority: "low",    dueDate: todayStr(), dueTime: "12:00", completed: false },
-];
+export const DEFAULT_TASKS = [];
 
 export const PRIORITY_COLOR = { high: "#ef4444", medium: "#f97316", low: "#22c55e" };
 export const CAT_COLOR = {

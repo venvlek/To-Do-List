@@ -23,15 +23,10 @@ const NAV_ITEMS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  profileName:       "",
-  profileEmail:      "",
-  theme:             "light",
-  notifDueReminder:  true,
-  notifDailyDigest:  false,
-  notifWeeklyReport: false,
-  notifReminderTime: "15 min",
-  soundEnabled:      false,
-  compactView:       false,
+  profileName: "", profileEmail: "", theme: "light",
+  notifDueReminder: true, notifDailyDigest: false,
+  notifWeeklyReport: false, notifReminderTime: "15 min",
+  soundEnabled: false, compactView: false,
 };
 
 function applyTheme(theme) {
@@ -41,11 +36,9 @@ function applyTheme(theme) {
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const {
-    user, authLoading,
-    authError, clearError,
-    signIn, signUp,
-    signInWithGoogle, signInWithApple, signInAsGuest,
-    resetPassword, logOut,
+    user, authLoading, authError, clearError,
+    signIn, signUp, signInWithGoogle, signInWithApple,
+    signInAsGuest, resetPassword, logOut,
   } = useAuth();
 
   // ── Splash ────────────────────────────────────────────────────────────────
@@ -55,18 +48,14 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── Firestore — single source of truth for tasks + settings ──────────────
+  // ── Firestore — owns ALL task + settings state ────────────────────────────
   const {
-    tasks,    setTasks,
-    settings: firestoreSettings,
-    setSettings: setFirestoreSettings,
-    tasksReady,
-    syncStatus, lastSynced,
-    isAnonymous,
-    saveTask, removeTask, clearAllTasks, saveSettings,
+    tasks, settings: firestoreSettings,
+    tasksReady, syncStatus, lastSynced, isAnonymous,
+    addTask, toggleTask, deleteTask, clearAllTasks, updateSettings,
   } = useFirestore({ user });
 
-  // Merge Firestore settings with defaults + user profile info
+  // Merge Firestore settings with defaults + live user profile
   const settings = {
     ...DEFAULT_SETTINGS,
     profileName:  user?.displayName || "",
@@ -74,20 +63,15 @@ export default function App() {
     ...(firestoreSettings || {}),
   };
 
-  const setSettings = (newSettings) => {
-    setFirestoreSettings(newSettings);
-    saveSettings(newSettings);
-  };
-
-  // ── Apply theme ───────────────────────────────────────────────────────────
+  // ── Theme ─────────────────────────────────────────────────────────────────
   useEffect(() => { applyTheme(settings.theme); }, [settings.theme]);
   useEffect(() => { applyTheme(settings.theme); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Screen logic ──────────────────────────────────────────────────────────
   const showSplash    = !splashDone || authLoading;
   const showLogin     = splashDone && !authLoading && !user;
-  // Also wait for Firestore to load before showing dashboard
   const showDashboard = splashDone && !authLoading && !!user && tasksReady;
+  const showLoading   = splashDone && !authLoading && !!user && !tasksReady;
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { requestPermission, playSound } = useNotifications({ tasks, settings });
@@ -108,7 +92,7 @@ export default function App() {
   const stats = {
     today:     tasks.filter((t) => t.dueDate === today).length,
     pending:   tasks.filter((t) => !t.completed).length,
-    highRisk:  tasks.filter((t) => t.priority.toLowerCase() === "high" && !t.completed).length,
+    highRisk:  tasks.filter((t) => t.priority === "high" && !t.completed).length,
     completed: tasks.filter((t) => t.completed).length,
   };
   const dateLabel = now.toLocaleDateString("en-US", {
@@ -116,59 +100,39 @@ export default function App() {
   });
   const timeLabel = now.toLocaleTimeString("en-US");
 
-  // ── Task handlers ─────────────────────────────────────────────────────────
+  // ── Task handlers — delegate entirely to useFirestore ─────────────────────
   const handleToggleTask = (id) => {
     playSound("complete");
-    setTasks((prev) => {
-      const next    = prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
-      const changed = next.find((t) => t.id === id);
-      if (changed) saveTask(changed);
-      return next;
-    });
+    toggleTask(id);
   };
 
   const handleDeleteTask = (id) => {
     if (window.confirm("Delete this task?")) {
       playSound("delete");
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      removeTask(id);
+      deleteTask(id);
     }
   };
 
   const handleAddTask = (data) => {
     playSound("add");
     const dueDate = data.dueDate || today;
-    const newTask = {
-      id:          String(Date.now()),
-      description: "",
-      dueTime:     "",
-      ...data,
-      dueDate,
-      priority:    data.priority.toLowerCase(),
-      completed:   false,
-      createdAt:   Date.now(),
-    };
-    setTasks((prev) => [newTask, ...prev]);
-    saveTask(newTask);
+    const task    = addTask({ ...data, dueDate });
 
     if (dueDate === today)    setFilter("today");
     else if (dueDate > today) setFilter("upcoming");
     else                      setFilter("all");
+
+    return task;
   };
 
-  const handleClearTasks = () => {
-    const current = tasks;
-    setTasks([]);
-    clearAllTasks(current);
-  };
+  const handleClearTasks = () => clearAllTasks();
+
+  const handleSettingsChange = (newSettings) => updateSettings(newSettings);
 
   // ── Auth handlers ─────────────────────────────────────────────────────────
   const handleSignIn = async (email, password) => {
     if (email === "__reset__") { await resetPassword(password); return; }
     await signIn(email, password);
-  };
-  const handleSignUp = async (email, password, name) => {
-    await signUp(email, password, name);
   };
   const handleLogOut = async () => {
     await logOut();
@@ -184,7 +148,7 @@ export default function App() {
       <Login
         visible={showLogin}
         onSignIn={handleSignIn}
-        onSignUp={handleSignUp}
+        onSignUp={(e, p, n) => signUp(e, p, n)}
         onGoogleSignIn={signInWithGoogle}
         onAppleSignIn={signInWithApple}
         onGuestSignIn={signInAsGuest}
@@ -192,8 +156,7 @@ export default function App() {
         clearError={clearError}
       />
 
-      {/* Loading state while Firestore loads */}
-      {splashDone && !authLoading && !!user && !tasksReady && (
+      {showLoading && (
         <div className="app__loading">
           <div className="app__loading__spinner" />
           <p>Loading your tasks…</p>
@@ -232,7 +195,7 @@ export default function App() {
       <Settings
         visible={showDashboard && activeNav === "settings"}
         settings={settings}
-        onSettingsChange={setSettings}
+        onSettingsChange={handleSettingsChange}
         onClearTasks={handleClearTasks}
         onLogOut={handleLogOut}
         onRequestPermission={requestPermission}
@@ -240,7 +203,7 @@ export default function App() {
       />
 
       {showDashboard && activeNav === "home" && (
-        <button className="app__fab" onClick={() => setShowAddTask(true)} title="Add task">＋</button>
+        <button className="app__fab" onClick={() => setShowAddTask(true)}>＋</button>
       )}
 
       {showDashboard && (

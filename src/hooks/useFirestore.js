@@ -1,3 +1,6 @@
+// useFirestore.js — single source of truth for tasks + settings
+// ALL mutations go through this hook. Nothing outside calls setTasks directly.
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   collection, doc,
@@ -5,56 +8,74 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
+const DEFAULT_SETTINGS = {
+  profileName: "", profileEmail: "", theme: "light",
+  notifDueReminder: true, notifDailyDigest: false,
+  notifWeeklyReport: false, notifReminderTime: "15 min",
+  soundEnabled: false, compactView: false,
+};
+
 export default function useFirestore({ user }) {
   const uid         = user?.uid;
-  const isAnonymous = user?.isAnonymous ?? true;
-  const cacheKey    = uid && !isAnonymous ? `firestoreTasks_${uid}` : null;
+  const isAnonymous = !uid || (user?.isAnonymous ?? true);
 
-  // ── Tasks — start from cache, then Firestore takes over ──────────────────
-  const [tasks, setTasks] = useState(() => {
-    if (!cacheKey) return [];
-    try {
-      const raw = localStorage.getItem(cacheKey);
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
-  });
+  const tasksCacheKey    = uid && !isAnonymous ? `fc_tasks_${uid}`    : null;
+  const settingsCacheKey = uid && !isAnonymous ? `fc_settings_${uid}` : null;
 
-  const [tasksReady, setTasksReady] = useState(isAnonymous); // guests are immediately "ready"
-  const [syncStatus, setSyncStatus] = useState("syncing");
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [tasks,      _setTasks]    = useState(() => loadCache(tasksCacheKey,    []));
+  const [settings,   _setSettings] = useState(() => loadCache(settingsCacheKey, DEFAULT_SETTINGS));
+  const [tasksReady, setTasksReady] = useState(isAnonymous);
+  const [syncStatus, setSyncStatus] = useState(isAnonymous ? "synced" : "syncing");
   const [lastSynced, setLastSynced] = useState(null);
 
-  // Track locally-added task IDs so onSnapshot doesn't drop them
-  const pendingIds = useRef(new Set());
+  // Internal ref holds the live tasks array so callbacks always see latest
+  const tasksRef    = useRef(tasks);
+  const pendingIds  = useRef(new Set()); // IDs we wrote locally but Firestore hasn't confirmed yet
 
-  // ── Firestore real-time listener ─────────────────────────────────────────
+  // Keep ref in sync
+  const setTasks = useCallback((updater) => {
+    _setTasks((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      tasksRef.current = next;
+      if (tasksCacheKey) {
+        try { localStorage.setItem(tasksCacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      }
+      return next;
+    });
+  }, [tasksCacheKey]);
+
+  const setSettings = useCallback((updater) => {
+    _setSettings((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (settingsCacheKey) {
+        try { localStorage.setItem(settingsCacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      }
+      return next;
+    });
+  }, [settingsCacheKey]);
+
+  // ── Firestore tasks listener ──────────────────────────────────────────────
   useEffect(() => {
-    if (!uid || isAnonymous) {
+    if (isAnonymous || !uid) {
       setTasksReady(true);
       setSyncStatus("synced");
       return;
     }
 
     setSyncStatus("syncing");
-    const tasksRef = collection(db, "users", uid, "tasks");
-
-    const unsub = onSnapshot(
-      tasksRef,
+    const ref  = collection(db, "users", uid, "tasks");
+    const unsub = onSnapshot(ref,
       (snapshot) => {
-        const fromFirestore = snapshot.docs
+        const fromDB = snapshot.docs
           .map((d) => ({ ...d.data(), id: d.id }))
           .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+        // Merge: keep pending local tasks at top, add confirmed DB tasks below
         setTasks((prev) => {
-          // Keep any locally-pending tasks that haven't reached Firestore yet
-          const pending = prev.filter((t) => pendingIds.current.has(String(t.id)));
-          const fromDB  = fromFirestore.filter((t) => !pendingIds.current.has(String(t.id)));
-          const merged  = [...pending, ...fromDB];
-
-          // Save merged result to cache
-          if (cacheKey) {
-            try { localStorage.setItem(cacheKey, JSON.stringify(merged)); } catch { /* ignore */ }
-          }
-          return merged;
+          const pending   = prev.filter((t) => pendingIds.current.has(String(t.id)));
+          const confirmed = fromDB.filter((t) => !pendingIds.current.has(String(t.id)));
+          return [...pending, ...confirmed];
         });
 
         setTasksReady(true);
@@ -62,113 +83,134 @@ export default function useFirestore({ user }) {
         setLastSynced(new Date());
       },
       (err) => {
-        console.error("Firestore tasks error:", err);
+        console.error("Tasks listener error:", err);
         setSyncStatus("error");
-        setTasksReady(true); // show whatever we have from cache
+        setTasksReady(true);
       }
     );
-
     return unsub;
-  }, [uid, isAnonymous, cacheKey]);
+  }, [uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Settings ──────────────────────────────────────────────────────────────
-  const settingsCacheKey = uid && !isAnonymous ? `firestoreSettings_${uid}` : null;
-
-  const [settings, setSettings] = useState(() => {
-    if (!settingsCacheKey) return null;
-    try {
-      const raw = localStorage.getItem(settingsCacheKey);
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  });
-
+  // ── Firestore settings listener ───────────────────────────────────────────
   useEffect(() => {
-    if (!uid || isAnonymous) return;
-    const ref = doc(db, "users", uid, "settings", "prefs");
-    const unsub = onSnapshot(ref, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setSettings((prev) => ({ ...prev, ...data }));
-        if (settingsCacheKey) {
-          try { localStorage.setItem(settingsCacheKey, JSON.stringify(data)); } catch { /* ignore */ }
-        }
-      }
-    }, (err) => { console.error("Firestore settings error:", err); });
+    if (isAnonymous || !uid) return;
+    const ref   = doc(db, "users", uid, "settings", "prefs");
+    const unsub = onSnapshot(ref,
+      (snap) => {
+        if (snap.exists()) setSettings((prev) => ({ ...DEFAULT_SETTINGS, ...prev, ...snap.data() }));
+      },
+      (err) => { console.error("Settings listener error:", err); }
+    );
     return unsub;
-  }, [uid, isAnonymous, settingsCacheKey]);
+  }, [uid, isAnonymous]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Write helpers ─────────────────────────────────────────────────────────
-  const saveTask = useCallback(async (task) => {
-    if (!uid || isAnonymous) return;
-    const taskId = String(task.id);
-    pendingIds.current.add(taskId);
-    setSyncStatus("syncing");
-    try {
-      await setDoc(doc(db, "users", uid, "tasks", taskId), {
-        ...task,
-        id:        taskId,
-        createdAt: task.createdAt || Date.now(),
+  // ── addTask — optimistic add + Firestore write ────────────────────────────
+  const addTask = useCallback((taskData) => {
+    const newTask = {
+      id:          String(Date.now()),
+      description: "",
+      dueTime:     "",
+      ...taskData,
+      priority:    taskData.priority?.toLowerCase() || "medium",
+      completed:   false,
+      createdAt:   Date.now(),
+    };
+
+    // 1. Add to local state immediately
+    setTasks((prev) => [newTask, ...prev]);
+
+    // 2. Mark as pending so onSnapshot doesn't drop it
+    pendingIds.current.add(newTask.id);
+
+    // 3. Write to Firestore
+    if (!isAnonymous && uid) {
+      setSyncStatus("syncing");
+      setDoc(doc(db, "users", uid, "tasks", newTask.id), {
+        ...newTask,
         updatedAt: Date.now(),
-      });
-      setSyncStatus("synced");
-      setLastSynced(new Date());
-    } catch (err) {
-      console.error("saveTask error:", err);
-      setSyncStatus("error");
-    } finally {
-      setTimeout(() => pendingIds.current.delete(taskId), 5000);
+      })
+        .then(() => {
+          setSyncStatus("synced");
+          setLastSynced(new Date());
+        })
+        .catch((err) => {
+          console.error("addTask error:", err);
+          setSyncStatus("error");
+        })
+        .finally(() => {
+          // Remove from pending after Firestore confirms (with buffer)
+          setTimeout(() => pendingIds.current.delete(newTask.id), 8000);
+        });
     }
-  }, [uid, isAnonymous]);
 
-  const removeTask = useCallback(async (taskId) => {
-    if (!uid || isAnonymous) return;
-    setSyncStatus("syncing");
-    try {
-      await deleteDoc(doc(db, "users", uid, "tasks", String(taskId)));
-      setSyncStatus("synced");
-      setLastSynced(new Date());
-    } catch (err) {
-      console.error("removeTask error:", err);
-      setSyncStatus("error");
+    return newTask;
+  }, [uid, isAnonymous, setTasks]);
+
+  // ── toggleTask ────────────────────────────────────────────────────────────
+  const toggleTask = useCallback((id) => {
+    setTasks((prev) => {
+      const next    = prev.map((t) => t.id === id ? { ...t, completed: !t.completed } : t);
+      const changed = next.find((t) => t.id === id);
+      if (changed && !isAnonymous && uid) {
+        setSyncStatus("syncing");
+        setDoc(doc(db, "users", uid, "tasks", String(id)), {
+          ...changed, updatedAt: Date.now(),
+        })
+          .then(() => { setSyncStatus("synced"); setLastSynced(new Date()); })
+          .catch((err) => { console.error("toggleTask error:", err); setSyncStatus("error"); });
+      }
+      return next;
+    });
+  }, [uid, isAnonymous, setTasks]);
+
+  // ── deleteTask ────────────────────────────────────────────────────────────
+  const deleteTask = useCallback((id) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (!isAnonymous && uid) {
+      setSyncStatus("syncing");
+      deleteDoc(doc(db, "users", uid, "tasks", String(id)))
+        .then(() => { setSyncStatus("synced"); setLastSynced(new Date()); })
+        .catch((err) => { console.error("deleteTask error:", err); setSyncStatus("error"); });
     }
-  }, [uid, isAnonymous]);
+  }, [uid, isAnonymous, setTasks]);
 
-  const clearAllTasks = useCallback(async (currentTasks) => {
-    if (!uid || isAnonymous) return;
-    setSyncStatus("syncing");
-    try {
+  // ── clearAllTasks ─────────────────────────────────────────────────────────
+  const clearAllTasks = useCallback(() => {
+    const current = [...tasksRef.current];
+    setTasks([]);
+    if (!isAnonymous && uid && current.length > 0) {
       const batch    = writeBatch(db);
-      const tasksRef = collection(db, "users", uid, "tasks");
-      currentTasks.forEach((t) => batch.delete(doc(tasksRef, String(t.id))));
-      await batch.commit();
-      setSyncStatus("synced");
-      setLastSynced(new Date());
-    } catch (err) {
-      console.error("clearAllTasks error:", err);
-      setSyncStatus("error");
+      const colRef   = collection(db, "users", uid, "tasks");
+      current.forEach((t) => batch.delete(doc(colRef, String(t.id))));
+      batch.commit().catch((err) => console.error("clearAllTasks error:", err));
     }
-  }, [uid, isAnonymous]);
+  }, [uid, isAnonymous, setTasks]);
 
-  const saveSettings = useCallback(async (newSettings) => {
-    if (!uid || isAnonymous) return;
-    try {
-      await setDoc(
+  // ── updateSettings ────────────────────────────────────────────────────────
+  const updateSettings = useCallback((newSettings) => {
+    setSettings(newSettings);
+    if (!isAnonymous && uid) {
+      setDoc(
         doc(db, "users", uid, "settings", "prefs"),
         { ...newSettings, updatedAt: Date.now() },
         { merge: true }
-      );
-      if (settingsCacheKey) {
-        try { localStorage.setItem(settingsCacheKey, JSON.stringify(newSettings)); } catch { /* ignore */ }
-      }
-    } catch (err) { console.error("saveSettings error:", err); }
-  }, [uid, isAnonymous, settingsCacheKey]);
+      ).catch((err) => console.error("updateSettings error:", err));
+    }
+  }, [uid, isAnonymous, setSettings]);
 
   return {
-    tasks, setTasks,
-    settings, setSettings,
-    tasksReady,
-    syncStatus, lastSynced,
-    isAnonymous,
-    saveTask, removeTask, clearAllTasks, saveSettings,
+    // State (read-only from outside)
+    tasks, settings, tasksReady, syncStatus, lastSynced, isAnonymous,
+    // Mutations (the ONLY way to change tasks/settings from outside)
+    addTask, toggleTask, deleteTask, clearAllTasks, updateSettings,
   };
+}
+
+// ── helper ────────────────────────────────────────────────────────────────────
+function loadCache(key, fallback) {
+  if (!key) return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
 }
